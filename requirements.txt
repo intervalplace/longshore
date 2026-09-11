@@ -1,0 +1,5 @@
+# longshore needs loraline for the radio. Clone it alongside, or:
+#   pip install pyserial pynacl
+# and put loraline on your PYTHONPATH.
+pyserial
+pynacl
