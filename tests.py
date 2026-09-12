@@ -276,4 +276,165 @@ assert all(any(one.inside(x + dx, y + dy)
            for x, y in edge)
 ok("reading off the edge of the map no longer counts as water to fish")
 
+
+# ---------- a number only you can see ----------
+from longshore.angler import WORTH, cost_of, level_from
+
+tally = Log()
+assert level_from(tally.points) == (1, 0, cost_of(1))
+for _ in range(30):
+    tally.record("roach", 22, 1.0)
+assert tally.points == 30 * WORTH["common"]
+assert tally.level == 2
+ok(f"an evening of common fish moves it: {tally.points} points is level {tally.level}")
+
+rare_one = Log()
+for _ in range(4):
+    rare_one.record("halibut", 120, 1.0)
+common = Log()
+for _ in range(4):
+    common.record("roach", 22, 1.0)
+assert rare_one.points > common.points
+assert rare_one.points <= common.points * 10, "a rare fish is not ten evenings"
+ok("a rare fish is worth more than a common one, and not absurdly more")
+
+# it never caps, and never runs away
+costs = [cost_of(n) for n in range(1, 60)]
+assert costs == sorted(costs) and costs[0] < costs[-1]
+assert costs[-1] < costs[0] * 800, "an exponent puts level fifty out of reach"
+# Roughly what a fish is worth on average, from the measured rarity spread,
+# and roughly a fish every twenty-two seconds.
+AN_HOUR = int(1.77 * 3600 / 22)
+def after(hours):
+    fished = Log()
+    for _ in range(int(AN_HOUR * hours)):
+        fished.record("roach", 20, 1.0)
+    return fished.level
+
+assert after(2) >= 4, after(2)          # an evening
+assert 8 <= after(10) <= 12, after(10)  # a month of weekly ones
+assert after(60) >= 18, after(60)       # about a year
+ok(f"an evening reaches {after(2)}, a month of them {after(10)}, a year {after(60)}")
+
+# and it is nobody else's business
+watcher = Angler(5, 5)
+for _ in range(200):
+    watcher.log.record("roach", 22, 1.0)
+watcher.state, watcher.landed = DONE, (F.BY_NAME["pike"], 88)
+on_the_air = watcher.presence()
+assert str(watcher.log.level) not in on_the_air.split(":")[-1]
+assert "level" not in on_the_air
+shown = read_presence(on_the_air)
+assert set(shown) == {"x", "y", "doing", "fish", "cm"}
+ok("it is not in the presence string, so nobody can build a table of everybody's")
+
+
+# ---------- the fire ----------
+from longshore.world import firepit
+from longshore.angler import COOKING, COOK_SECONDS, FEEDING, FIRE_REACH
+
+for seed in ("bay-0", "bay-3", "bay-5", "quiet-bay", "longshore"):
+    coast = build(seed)
+    pit = firepit(coast)
+    assert pit is not None, seed
+    assert coast.on_foot(*pit), seed
+    assert not coast.walkable(*pit), "you cannot stand in a fire"
+    room = sum(1 for dx in (-1, 0, 1) for dy in (-1, 0, 1)
+               if coast.walkable(pit[0] + dx, pit[1] + dy))
+    near = sum(1 for dx in range(-4, 5) for dy in range(-4, 5)
+               if coast.fishable_from(pit[0] + dx, pit[1] + dy))
+    assert room >= 5 and near >= 3, (seed, room, near)
+    spots = [(x, y) for y in range(coast.height) for x in range(coast.width)
+             if coast.fishable_from(x, y)]
+    assert min(abs(s[0] - pit[0]) + abs(s[1] - pit[1]) for s in spots) <= 3
+assert firepit(build("longshore")) == firepit(build("longshore"))
+ok("every coast has a fire, where the fishing is, and the seed decides it")
+
+pit = firepit(one)
+cook = Angler(*pit)
+assert cook.by_the_fire(one)
+assert not Angler(0, 0).by_the_fire(one) or FIRE_REACH > 20
+cook.landed = (F.BY_NAME["bass"], 58)
+assert cook.cook(one, 1000.0) and cook.state == COOKING
+assert cook.tick(1010.0) == [], "it is not done in ten seconds"
+assert ("cooked", "bass") in cook.tick(1000.0 + COOK_SECONDS + 0.1)
+assert cook.log.cooked == 1 and cook.state == IDLE
+ok("you can put a fish on it, and it comes off again")
+
+cook.landed = (F.BY_NAME["old boot"], 30)
+assert not cook.cook(one, 1020.0), "a boot is not dinner"
+far = Angler(*[c for c in [(1, 1)]][0])
+far.landed = (F.BY_NAME["bass"], 58)
+assert not far.cook(one, 1000.0), "not from across the bay"
+ok("a boot is not dinner and neither is a fish from across the bay")
+
+# the driftwood you keep catching turns out to be the fuel
+woody = Angler(*pit)
+before = woody.wood
+woody.pending = (F.BY_NAME["driftwood"], 40)
+woody.state, woody.until = BITING, 0.0
+woody.strike(1.0)
+assert woody.wood == before + 1
+assert woody.feed(one, 2.0) and woody.wood == before
+assert not Angler(*pit).feed(one, 2.0), "nothing to put on"
+ok("driftwood, the one disappointment in the game, is what the fire burns")
+
+# and what is on the fire rides in the slot a catch already uses
+cook.state, cook.at_fire = COOKING, ("bass", 58)
+told = read_presence(cook.presence())
+assert told["doing"] == "k" and told["fish"] == "bass"
+assert len(cook.presence()) < 24
+ok(f"the shore is told what is on the fire in {len(cook.presence())} characters")
+
+
+# ---------- cooking counts, a little ----------
+from longshore.angler import (COOK_SECONDS, COOK_WORTH, SHOW_CATCH,
+                              WAIT_MAX, WAIT_MIN, load_log, save_log)
+
+counter = Angler(*pit)
+counter.landed, counter.state = (F.BY_NAME["bass"], 58), DONE
+was = counter.log.points
+assert counter.cook(one, 1000.0)
+assert counter.landed[0] is None, "it is on the fire now, not in your hand"
+assert not counter.cook(one, 1001.0), "the same fish cannot go on twice"
+assert counter.log.points == was + COOK_WORTH
+ok(f"cooking is worth {COOK_WORTH} and takes {COOK_SECONDS:.0f} seconds")
+
+# You can only cook a fish you have already caught, so cooking rides on top of
+# a cast rather than instead of one. If it pays better per second than casting
+# does, the best thing in the game becomes fishing the one spot nearest the
+# fire, and a whole coast collapses to a single tile.
+A_FISH = 1.77                                  # the measured average
+A_CAST = (WAIT_MIN + WAIT_MAX) / 2 + 1.0 + SHOW_CATCH
+fishing = A_FISH / A_CAST
+both = (A_FISH + COOK_WORTH) / (A_CAST + COOK_SECONDS)
+assert both < fishing, (both, fishing)
+assert both > fishing * 0.9, (both, fishing)
+ok(f"and pays {both:.3f} a second against fishing's {fishing:.3f}: "
+   f"never the efficient thing, never far off it")
+
+# ---------- a log that survives being closed ----------
+import tempfile as _t, os as _os
+with _t.TemporaryDirectory() as room2:
+    where = _os.path.join(room2, "log.json")
+    kept = Log()
+    for _ in range(40):
+        kept.record("roach", 22, 1.0)
+    kept.record("conger", 150, 2.0)
+    kept.cooked = 6
+    save_log(kept, where)
+    back = load_log(where)
+    assert back.points == kept.points and back.level == kept.level
+    assert back.kinds == kept.kinds and back.cooked == 6
+    ok(f"a fishing log survives being closed: level {back.level} came back")
+
+    assert load_log(_os.path.join(room2, "nothing.json")).points == 0
+    open(where, "w").write("not json at all")
+    assert load_log(where).points == 0
+    ok("a missing or broken log starts fresh rather than failing")
+
+    # the first shape on disk was the bare dictionary of catches
+    assert Log.from_dict({"roach": [20, 22, 1.0, 1.0]}).points == 20
+    ok("and a log written before cooking existed still reads")
+
 print(f"\nALL PASS  ({PASSED} checks)")

@@ -25,7 +25,7 @@ radio.
 
 ## The world
 
-Derived, never transmitted. A seed gives a coastline, and everyone with the
+Forty by twenty-four, derived and never transmitted. A seed gives a coastline, and everyone with the
 same seed is on the same coast without a byte crossing the air. Bays,
 headlands, reed beds, rocks standing out of the water.
 
@@ -61,7 +61,56 @@ A bite comes in seven to twenty-four seconds and you have under three seconds
 to strike. Walking away cancels the cast rather than dragging a line up the
 beach.
 
-The log keeps your best of each kind and never takes anything away.
+The log keeps your best of each kind and never takes anything away, and is
+written beside your identity every half minute. Without that the angler was
+rebuilt from nothing at every start and a level meant to take a year reset
+whenever the window closed, which made the whole of it a lie.
+
+## The fire
+
+Every coast has one, where the fishing is. Derived from the seed like
+everything else, so nobody places it and nobody is told where it is.
+
+**It is lit while people are there and out when they are not**, and that costs
+nothing: it is not tended, it does not go out while you are away, and you
+cannot come back to a cold one. A fire that needed feeding would be decay with
+a flame on it.
+
+Whether it is burning is worked out from where everybody is standing, which
+every machine already knows from the heartbeats. No part of the fire crosses
+the radio.
+
+Put your last catch on with **c** and everybody nearby sees what it is, in the
+same fourteen characters a catch already uses. Nothing is gained by cooking
+and nothing is lost. It is a reason to walk over to where the others are.
+
+The driftwood you keep pulling out, the one disappointment in the game, turns
+out to be what it burns.
+
+You cannot stand in it.
+
+## A number only you can see
+
+Your fishing goes up with every fish. Rare ones count for more, gently: a
+person who fished all evening and caught roach should not end up behind where
+they started.
+
+An evening reaches about level six, a month of weekly ones about eleven, a
+year about twenty-two, and there is no last level. The curve is polynomial
+rather than exponential, because an exponent put level forty at fourteen
+thousand hours, which is not a level, it is a joke.
+
+It is derived from the log rather than stored, so there is no second number to
+keep in step. And it is **not in the presence string and never will be**: the
+moment it is on the wire somebody can write a client that shows everybody's,
+and then it is a leaderboard whether anybody meant one or not.
+
+Which means if you want to know somebody's, you have to ask, and they can lie,
+and nobody minds. That is the whole of it.
+
+The collection is still there, and still the thing worth having: what you have
+ever caught, which stops moving once you have seen most of it. The level keeps
+moving after that, which is why both exist.
 
 When something takes the float it turns red and throws ripples. On the strike
 the name and size float up and fade, tinted by rarity, and land in the log. The
@@ -77,6 +126,37 @@ are being ranked whether anybody meant it, and your own count is in your own
 sidebar where only you see it.
 That is the most social thing that happens here, and for a while the client was
 parsing it off the air and throwing it away.
+
+## The look
+
+Isometric, and drawn the way a handheld of about 2003 drew things: one 288x192
+framebuffer blitted once with nearest neighbour, a fifteen-bit palette so every
+colour is a multiple of eight, 2:1 diamonds with the cut earth showing beneath
+them, Bayer-dithered top faces, and a hard black edge on everything that stands
+up.
+
+No WebGL, and it would not help. The look is constraint rather than
+capability, and at thirty thousand pixels a 2D context has nothing to
+apologise for.
+
+Above rather than beside. Isometric was built and then put away: a camera
+means you cannot see who is on the shore, and seeing who is on the shore is
+most of why anybody is on it. It also spends its whole budget on traversal,
+which an action game does all day and this one barely does at all. The palette
+discipline came back from it; the projection did not.
+
+`view_iso.py` is still there and is genuinely nicer for walking about.
+`FLAT_PAGE` in `web.py` is the plain one it all started from.
+
+People are drawn larger than their tile and wear a name on a dark plate. That
+helped and did not settle it, so the coast came down from sixty-four by
+thirty-six to forty by twenty-four and the tiles went up to eighteen pixels.
+Two and a half thousand tiles swallowed four figures whole; a thousand does
+not.
+
+Shrinking it cost ten species before anything else was changed. Rock ledges
+were guaranteed on every coast and reed beds were not, which mattered not at
+all on a large map and a great deal on a small one. Both are guaranteed now.
 
 ## Sound and speech
 
