@@ -114,7 +114,7 @@ class WebView:
                 return out
 
 
-PAGE = r"""<!DOCTYPE html>
+FLAT_PAGE = r"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
 <title>longshore</title>
@@ -137,6 +137,9 @@ canvas{width:100%;height:auto;display:block;image-rendering:pixelated;
 .cols{display:flex;gap:10px;align-items:flex-start}
 .side{width:150px;flex:none;font-size:11px;line-height:1.5}
 .side h2{font-size:11px;margin:8px 0 3px;color:var(--faint);font-weight:600}
+.lvl{color:var(--gold);font-size:13px;font-weight:600;letter-spacing:.01em}
+.bar{height:3px;background:var(--rule);border-radius:2px;margin:3px 0 4px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--gold)}
 .kind{display:flex;justify-content:space-between;gap:6px}
 .kind i{font-style:normal;color:var(--faint)}
 .r-common{color:#9fb39a}.r-uncommon{color:#8fc8d8}.r-scarce{color:#c8a0e0}
@@ -164,7 +167,7 @@ button:active{background:var(--rule)}
     <canvas id="sea" width="640" height="360"></canvas>
     <div class="side" id="side"></div>
   </div>
-  <div class="hint">tap the water to fish it &middot; tap the land to walk &middot; tap again to strike</div>
+  <div class="hint">tap the water to fish it &middot; tap the land to walk &middot; tap again to strike &middot; <b>c</b> at the fire</div>
   <div id="log"></div>
   <form id="say"><input id="text" placeholder="say something" autocomplete="off"><button>send</button></form>
 </div>
@@ -260,6 +263,45 @@ function paintCoast(w){
   return backdrop;
 }
 
+function fire(g, f, t){
+  const px = f.x*T, py = f.y*T;
+  // The stones are always there. The flame is there when people are.
+  g.fillStyle = '#6b645a';
+  for(let i=0;i<6;i++){
+    const a = i/6*6.2832;
+    g.beginPath();
+    g.ellipse(px+T/2+Math.cos(a)*6.5, py+T/2+Math.sin(a)*4.5+2, 2.6, 2, 0, 0, 6.2832);
+    g.fill();
+  }
+  if(!f.lit){
+    g.fillStyle = '#2b2723';
+    g.beginPath(); g.ellipse(px+T/2, py+T/2+1, 4, 2.6, 0, 0, 6.2832); g.fill();
+    return;
+  }
+  // Bigger with more people round it, which is the only thing that feeds it.
+  const size = 1 + Math.min(3, f.round_it) * 0.28;
+  const flick = 0.82 + Math.sin(t/90)*0.1 + Math.sin(t/37)*0.06;
+  const glow = g.createRadialGradient(px+T/2, py+T/2, 1, px+T/2, py+T/2, 34*size);
+  glow.addColorStop(0, 'rgba(255,196,104,0.52)');
+  glow.addColorStop(0.45, 'rgba(255,150,60,0.22)');
+  glow.addColorStop(1, 'rgba(255,140,50,0)');
+  g.fillStyle = glow;
+  g.beginPath(); g.arc(px+T/2, py+T/2, 34*size, 0, 6.2832); g.fill();
+  const h = 11*size*flick;
+  g.fillStyle = '#e8642a';
+  g.beginPath();
+  g.moveTo(px+T/2-4.5*size, py+T/2+3);
+  g.quadraticCurveTo(px+T/2-2, py+T/2-h*0.5, px+T/2, py+T/2-h);
+  g.quadraticCurveTo(px+T/2+2, py+T/2-h*0.5, px+T/2+4.5*size, py+T/2+3);
+  g.fill();
+  g.fillStyle = '#f5b93f';
+  g.beginPath();
+  g.moveTo(px+T/2-2.4*size, py+T/2+3);
+  g.quadraticCurveTo(px+T/2-1, py+T/2-h*0.35, px+T/2, py+T/2-h*0.62);
+  g.quadraticCurveTo(px+T/2+1, py+T/2-h*0.35, px+T/2+2.4*size, py+T/2+3);
+  g.fill();
+}
+
 function person(g, px, py, colour, doing, t){
   const bob = Math.sin(t/600 + px) * 0.6;
   g.fillStyle = 'rgba(0,0,0,0.35)';
@@ -269,7 +311,11 @@ function person(g, px, py, colour, doing, t){
   g.fillRect(px+T/2-3, py+9+bob, 6, 4);        // legs
   g.fillStyle = '#e8dcc8';
   g.fillRect(px+T/2-2, py+bob, 4, 3);          // head
-  if(doing !== '-'){
+  if(doing === 'k' || doing === 'f'){
+    // crouched at the fire rather than holding a rod out
+    g.fillStyle = 'rgba(245,185,63,0.5)';
+    g.beginPath(); g.arc(px+T/2, py+5+bob, 5, 0, 6.2832); g.fill();
+  } else if(doing !== '-'){
     // the rod, and a line out over the water
     g.strokeStyle = '#9a7a4a'; g.lineWidth = 1;
     g.beginPath(); g.moveTo(px+T/2+2, py+6+bob); g.lineTo(px+T/2+9, py-1+bob); g.stroke();
@@ -283,6 +329,7 @@ function draw(){
   const now = performance.now();
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(paintCoast(w), 0, 0);
+  if(state.fire) fire(ctx, state.fire, now);
 
   // where a cast lands, and what it is doing there
   const t = ease((now - moveAt)/240);
@@ -292,7 +339,7 @@ function draw(){
     const from = was[p.id] || p;
     const px = (from.x + (p.x-from.x)*t) * T;
     const py = (from.y + (p.y-from.y)*t) * T;
-    if(p.doing !== '-' && p.float){
+    if(p.doing !== '-' && p.doing !== 'k' && p.doing !== 'f' && p.float){
       const fx = p.float[0]*T + T/2, fy = p.float[1]*T + T/2;
       ctx.strokeStyle = 'rgba(240,236,220,0.55)'; ctx.lineWidth = 1;
       ctx.beginPath();
@@ -391,6 +438,11 @@ function draw(){
 function side(){
   const s = document.getElementById('side'), me = state.me || {};
   let h = '<h2>you</h2>';
+  /* Yours alone. It is not sent anywhere, so somebody who asks has to take
+     your word for it, which is the entire charm of the thing. */
+  const done = me.needs ? Math.round(100 * (me.into||0) / me.needs) : 0;
+  h += `<div class="lvl">fishing ${me.level||1}</div>`;
+  h += `<div class="bar"><i style="width:${done}%"></i></div>`;
   h += `<div class="muted">${(me.kinds||0)} kinds &middot; ${(me.caught||0)} caught</div>`;
   h += `<div class="muted">${me.pool ? 'fishing the '+me.pool : 'not by the water'}</div>`;
   const recent = (me.recent||[]);
@@ -398,11 +450,24 @@ function side(){
     h += '<h2>lately</h2>';
     recent.forEach(r=>{ h += `<div class="kind r-${r.rarity}">${r.name}<i> ${r.cm}cm</i></div>`; });
   }
+  if(state.fire){
+    h += '<h2>the fire</h2>';
+    if(!state.fire.lit) h += '<div class="muted">out; nobody there</div>';
+    else {
+      h += `<div class="lvl">burning</div>`;
+      const cooking = state.fire.cooking.map(c=>c.name);
+      h += `<div class="muted">${state.fire.round_it} round it${
+        cooking.length ? ' &middot; ' + cooking.join(', ') + ' cooking' : ''}</div>`;
+    }
+    if(me.at_fire) h += `<div class="muted">you are here &middot; <b>c</b> to cook</div>`;
+    if(me.wood) h += `<div class="muted">${me.wood} driftwood</div>`;
+  }
   const others = (state.people||[]).filter(p=>!p.me);
   h += '<h2>on the shore</h2>';
   if(!others.length) h += '<div class="muted">nobody yet</div>';
   others.forEach(p=>{
-    const what = {'-':'about','c':'fishing','!':'a bite','+':'landed one'}[p.doing]||'';
+    const what = {'-':'about','c':'fishing','!':'a bite','+':'landed one',
+                  'k':'at the fire','f':'feeding the fire'}[p.doing]||'';
     h += `<div style="color:${SEAT[p.seat%SEAT.length]}">${p.name} <i class="muted">${what}</i></div>`;
   });
   s.innerHTML = h;
@@ -426,6 +491,8 @@ cv.onclick = ev => {
   // One gesture does everything: a bite is struck, otherwise the tap is a
   // place to go and, if it is water, a thing to do when you get there.
   if(state.me && state.me.doing === '!') return send('strike');
+  if(state.fire && x === state.fire.x && y === state.fire.y && state.me.at_fire)
+    return send('cook');
   send(`tap ${x} ${y}`);
 };
 
@@ -435,6 +502,7 @@ addEventListener('keydown', e=>{
   const mv = {ArrowLeft:'w',ArrowRight:'e',ArrowUp:'n',ArrowDown:'s',
               h:'w',l:'e',k:'n',j:'s'};
   if(mv[e.key]) send('step ' + mv[e.key]);
+  if(e.key === 'c') send('cook');
 });
 
 document.getElementById('mute').onclick = () => { setMuted(!muted); if(!muted) note('landed'); };
@@ -477,3 +545,16 @@ new EventSource('/events').onmessage = m => {
 draw();
 </script></body></html>
 """
+
+
+# Above rather than beside. Isometric was tried and cost the one thing this
+# place needs: a camera means you cannot see who is on the shore, and seeing
+# who is on the shore is most of why anybody is. The palette discipline came
+# back with it; the projection did not.
+#
+# view_iso is kept because it is genuinely better for walking about, and
+# FLAT_PAGE above is the plain one it all started from.
+from .view_flat import PAGE as HANDHELD_PAGE
+from .view_iso import PAGE as ISO_PAGE
+
+PAGE = HANDHELD_PAGE

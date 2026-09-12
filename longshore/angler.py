@@ -18,6 +18,11 @@ from . import fish as F
 from .world import Rng, seed_of
 
 IDLE, WAITING, BITING, DONE = "idle", "waiting", "biting", "done"
+COOKING, FEEDING = "cooking", "feeding"
+
+FIRE_REACH = 3           # how close you have to be for it to be your fire
+COOK_SECONDS = 25.0
+FED_SECONDS = 45.0       # how long a piece of driftwood keeps it up
 
 # The gap people talk in. These were 14 to 48 seconds, carried over from
 # catacomms where an action had to pay for its own airtime. Here a cast costs
@@ -27,6 +32,56 @@ IDLE, WAITING, BITING, DONE = "idle", "waiting", "biting", "done"
 WAIT_MIN, WAIT_MAX = 7.0, 24.0
 BITE_WINDOW = 2.6        # how long you have to strike
 SHOW_CATCH = 4.0         # how long a landed fish stays on screen
+
+
+# What a fish is worth towards your fishing. Weighted gently: a rare one
+# should feel like a good evening rather than the only evening that counted,
+# and somebody who fished all night and caught roach should not end up behind
+# where they started.
+WORTH = {"common": 1, "uncommon": 2, "scarce": 4, "rare": 8, "junk": 1}
+
+# What cooking one is worth, and how long it takes.
+#
+# The first attempt was one point in five seconds, which was meant to be too
+# small to matter and was in fact the best thing in the game: you can only
+# cook a fish you have already caught, so it rides on top of a cast rather
+# than instead of one, and at five seconds it returned 0.109 a second against
+# fishing's 0.086. The optimal play was to fish the one spot nearest the fire
+# and cook everything, which collapses a whole coast to a single tile.
+#
+# So it is slow. Twenty-five seconds for two comes to 0.083 a second, a
+# fraction under fishing: never the efficient thing, never far off it either.
+# The decision costs almost nothing in either direction, which is the point,
+# because then it is made for reasons that are not numbers.
+#
+# And the twenty-five seconds is not a price, it is the thing itself. It is
+# time stood at a fire with your hands busy, which is what a fire is for.
+COOK_WORTH = 2
+
+# Level n costs BASE * n ** CURVE. It never caps and never runs away: level
+# five is an evening, ten is a month of weekly ones, twenty is about a year,
+# and there is no last one. An exponential curve put level forty at fourteen
+# thousand hours, which is not a level, it is a joke.
+LEVEL_BASE = 15
+LEVEL_CURVE = 1.6
+
+
+def cost_of(level: int) -> int:
+    """What the next level asks for."""
+    return int(LEVEL_BASE * (max(1, level) ** LEVEL_CURVE))
+
+
+def level_from(points: int) -> tuple:
+    """(level, how far into it, what this one costs).
+
+    Derived from the log rather than stored, so there is nothing to keep in
+    step and nothing to corrupt.
+    """
+    level, spent = 1, 0
+    while spent + cost_of(level) <= points:
+        spent += cost_of(level)
+        level += 1
+    return level, points - spent, cost_of(level)
 
 
 @dataclass
@@ -41,13 +96,16 @@ class Entry:
 
 @dataclass
 class Log:
-    """What you have ever caught. It only ever grows.
+    """What you have ever caught, and what you have put on the fire.
+
+    It only ever grows.
 
     No decay, no seasons expiring, nothing to lose by not turning up for a
     month. The number that goes up is how many kinds you have seen, and it is
     nobody's business but yours.
     """
     entries: dict = field(default_factory=dict)
+    cooked: int = 0
 
     def record(self, species: str, cm: int, now: float) -> bool:
         """Returns True if this is a kind you had never caught before."""
@@ -65,6 +123,24 @@ class Log:
         return len(self.entries)
 
     @property
+    def points(self) -> int:
+        """Everything you have ever pulled out, weighted by how hard it was.
+
+        Recomputed from the log every time. There is no second number to keep
+        in step, and nothing to lose if one of them is wrong.
+        """
+        from . import fish as F
+        total = 0
+        for name, entry in self.entries.items():
+            kind = F.BY_NAME.get(name)
+            total += WORTH.get(kind.rarity if kind else "common", 1) * entry.count
+        return total + self.cooked * COOK_WORTH
+
+    @property
+    def level(self) -> int:
+        return level_from(self.points)[0]
+
+    @property
     def caught(self) -> int:
         return sum(e.count for e in self.entries.values())
 
@@ -73,21 +149,35 @@ class Log:
         return seen.best if seen else 0
 
     def to_dict(self) -> dict:
-        return {n: [e.count, e.best, e.first, e.last]
-                for n, e in sorted(self.entries.items())}
+        return {"caught": {n: [e.count, e.best, e.first, e.last]
+                           for n, e in sorted(self.entries.items())},
+                "cooked": self.cooked}
 
     @classmethod
     def from_dict(cls, raw: dict) -> "Log":
         out = cls()
-        for name, (count, best, first, last) in (raw or {}).items():
+        # The first shape was the bare dictionary of catches. Anybody who
+        # fished before this reads back rather than starting again.
+        caught = (raw or {}).get("caught", raw or {})
+        for name, row in caught.items():
+            if not isinstance(row, (list, tuple)) or len(row) != 4:
+                continue
+            count, best, first, last = row
             out.entries[name] = Entry(name, int(count), int(best),
                                       float(first), float(last))
+        out.cooked = int((raw or {}).get("cooked", 0) or 0)
         return out
 
 
 @dataclass
 class Angler:
-    """Where you are and what you are doing about it."""
+    """Where you are and what you are doing about it.
+
+    The log is the only part worth keeping. Where you happen to be standing is
+    not, and a level measured in months that resets when you close the window
+    is not a level at all: that was true here for longer than it should have
+    been.
+    """
     x: int
     y: int
     log: Log = field(default_factory=Log)
@@ -97,6 +187,8 @@ class Angler:
     landed: tuple = (None, 0)   # what you last brought in
     casts: int = 0
     missed: int = 0
+    wood: int = 0            # driftwood caught and not yet burned
+    at_fire: tuple = (None, 0)   # what is on the fire, and how big
 
     # -- what you can do ---------------------------------------------------
 
@@ -142,6 +234,9 @@ class Angler:
                 self.missed += 1
             return (None, 0)
         species, cm = self.pending
+        if species.name in ("driftwood",):
+            # The one disappointment in the game turns out to be the fuel.
+            self.wood += 1
         self.log.record(species.name, cm, now)
         self.state, self.until = DONE, now + SHOW_CATCH
         self.landed, self.pending = (species, cm), (None, 0)
@@ -149,6 +244,36 @@ class Angler:
 
     def stop(self) -> None:
         self.state, self.pending = IDLE, (None, 0)
+
+    # -- the fire ----------------------------------------------------------
+
+    def by_the_fire(self, world) -> bool:
+        from .world import firepit
+        pit = firepit(world)
+        return bool(pit and max(abs(self.x - pit[0]), abs(self.y - pit[1])) <= FIRE_REACH)
+
+    def cook(self, world, now: float) -> bool:
+        """Put your last catch on. Nothing is gained by it and nothing is
+        lost: it is a reason to walk over to where the others are."""
+        if not self.by_the_fire(world) or self.state in (WAITING, BITING):
+            return False
+        if self.landed[0] is None or self.landed[0].junk:
+            return False
+        self.state, self.until = COOKING, now + COOK_SECONDS
+        self.at_fire = (self.landed[0].name, self.landed[1])
+        self.log.cooked += 1
+        self.landed = (None, 0)      # it is on the fire now, not in your hand
+        return True
+
+    def feed(self, world, now: float) -> bool:
+        """A piece of driftwood on the fire. It burns higher for a while."""
+        if not self.by_the_fire(world) or self.wood <= 0:
+            return False
+        if self.state in (WAITING, BITING):
+            return False
+        self.wood -= 1
+        self.state, self.until = FEEDING, now + 2.0
+        return True
 
     # -- the clock ---------------------------------------------------------
 
@@ -164,6 +289,12 @@ class Angler:
             news.append(("lost", None))
         elif self.state == DONE and now >= self.until:
             self.state = IDLE
+        elif self.state == COOKING and now >= self.until:
+            self.state = IDLE
+            news.append(("cooked", self.at_fire[0]))
+            self.at_fire = (None, 0)
+        elif self.state == FEEDING and now >= self.until:
+            self.state = IDLE
         return news
 
     # -- what other people are told ---------------------------------------
@@ -172,10 +303,16 @@ class Angler:
         """Small enough to ride on a heartbeat, which is why it is a string
         and not a structure. Position, what you are doing, and the last thing
         you caught, if it was recent enough to be worth mentioning."""
-        doing = {IDLE: "-", WAITING: "c", BITING: "!", DONE: "+"}[self.state]
+        doing = {IDLE: "-", WAITING: "c", BITING: "!", DONE: "+",
+                 COOKING: "k", FEEDING: "f"}[self.state]
         got = ""
         if self.state == DONE and self.landed[0] is not None:
             got = f":{self.landed[0].name}:{self.landed[1]}"
+        elif self.state == COOKING and self.at_fire[0]:
+            # Cooking rides in the same slot a catch does, so telling the
+            # shore what is on the fire costs nothing that was not already
+            # being sent.
+            got = f":{self.at_fire[0]}:{self.at_fire[1]}"
         return f"@{self.x}.{self.y}{doing}{got}"
 
 
@@ -187,7 +324,7 @@ def read_presence(text: str):
         return None
     body = text[1:]
     head, _, tail = body.partition(":")
-    if not head or head[-1] not in "-c!+":
+    if not head or head[-1] not in "-c!+kf":
         return None
     doing, coords = head[-1], head[:-1]
     if "." not in coords:
@@ -201,3 +338,32 @@ def read_presence(text: str):
         out["fish"] = name
         out["cm"] = int(cm) if cm.isdigit() else 0
     return out
+
+
+def load_log(path) -> Log:
+    """Read a fishing log back, or start a new one."""
+    import json
+    from pathlib import Path
+    where = Path(path)
+    if not where.exists():
+        return Log()
+    try:
+        return Log.from_dict(json.loads(where.read_text()))
+    except Exception:
+        return Log()
+
+
+def save_log(log: Log, path) -> None:
+    """Written whole and moved into place, so a machine turned off mid-write
+    comes back to the log it had rather than half of one."""
+    import json
+    import os
+    from pathlib import Path
+    where = Path(path)
+    try:
+        where.parent.mkdir(parents=True, exist_ok=True)
+        temporary = where.with_suffix(".tmp")
+        temporary.write_text(json.dumps(log.to_dict(), separators=(",", ":")))
+        os.replace(temporary, where)
+    except OSError:
+        pass

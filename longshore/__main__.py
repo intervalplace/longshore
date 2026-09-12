@@ -22,7 +22,8 @@ from loraline.transport import (Link, LoRaInterface, RadioConfig,
                                 TCPClientInterface, TCPServerInterface)
 
 from . import fish as F
-from .angler import (Angler, Log, read_presence, BITING, DONE, IDLE, WAITING)
+from .angler import (Angler, COOK_SECONDS, Log, level_from, read_presence,
+                     BITING, COOKING, DONE, FEEDING, IDLE, WAITING)
 from .moving import first_stand, float_for, nearest_spot, path_between, plan
 from .web import WebView
 from .world import build
@@ -88,11 +89,13 @@ def run(client: Client, view: WebView, world, nick: str) -> None:
                     note("You cast.")
                 intent = None
 
-        for kind, _ in me.tick(now):
+        for kind, what in me.tick(now):
             if kind == "bite":
                 note("Something is on it.", "gold")
             elif kind == "lost":
                 note("Gone.")
+            elif kind == "cooked":
+                note(f"The {what} is done.", "gold")
 
         for typed in view.drain():
             verb, _, rest = typed.partition(" ")
@@ -113,6 +116,15 @@ def run(client: Client, view: WebView, world, nick: str) -> None:
             elif verb == "cast":
                 if me.cast(world, now, stamp.month, stamp.hour):
                     note("You cast.")
+            elif verb == "cook":
+                if me.cook(world, now):
+                    note(f"You put the {me.at_fire[0]} on the fire.", "gold")
+                elif me.wood and me.feed(world, now):
+                    note("You put a piece of driftwood on.")
+                elif not me.by_the_fire(world):
+                    note("You are not by the fire.")
+                else:
+                    note("Nothing to put on.")
             elif verb == "step" and rest:
                 walking, intent = [], None
                 delta = {"n": (0, -1), "s": (0, 1), "e": (1, 0), "w": (-1, 0)}.get(rest)
@@ -161,13 +173,26 @@ def run(client: Client, view: WebView, world, nick: str) -> None:
         time.sleep(0.08)
 
 
+# Every state a person can be in, as one character. Missing cooking and
+# feeding here meant the snapshot raised the moment anybody put a fish on the
+# fire, which is a poor way to find out a map is incomplete.
+DOING = {IDLE: "-", WAITING: "c", BITING: "!", DONE: "+",
+         COOKING: "k", FEEDING: "f"}
+
+
 def snapshot(world, me, session, log, nick, seat_of, caught, stamp, said) -> dict:
+    import time as _time
+    now = _time.time()
     pool = F.pool_at(world, me.x, me.y) if world.fishable_from(me.x, me.y) else None
     people = [{"id": session.address, "name": nick, "me": True,
                "said": said.get(session.address, ("", 0))[0],
-               "x": me.x, "y": me.y, "doing": {IDLE: "-", WAITING: "c",
-                                               BITING: "!", DONE: "+"}[me.state],
+               "x": me.x, "y": me.y, "doing": DOING.get(me.state, "-"),
                "seat": seat_of(session.address),
+               # How far through the cook, so the page has something to draw
+               # over twenty-five seconds of standing still.
+               "until": max(0.0, me.until - now) if me.state == COOKING else 0.0,
+               "span": COOK_SECONDS if me.state == COOKING else 0.0,
+               "onfire": me.at_fire[0] or "",
                "float": float_for(world, me)}]
     for peer in session.online_peers():
         shown = read_presence(peer.app or "")
@@ -179,15 +204,43 @@ def snapshot(world, me, session, log, nick, seat_of, caught, stamp, said) -> dic
                        "seat": seat_of(peer.address),
                        "float": float_for(world, None, shown["x"], shown["y"])})
     recent = sorted(me.log.entries.values(), key=lambda e: -e.last)[:8]
+    # Yours, and nobody else's. It is not in the presence string and never
+    # will be: the moment it is on the wire somebody can write a client that
+    # shows everybody's, and then it is a leaderboard whether anybody meant
+    # one or not. Being unverifiable is the point. Ask people, and they can
+    # lie, and nobody minds.
+    level, into, needs = level_from(me.log.points)
+
+    # How the fire is doing is worked out from where everybody is standing,
+    # which every machine already knows. Nothing about it is transmitted: it
+    # is lit because people are there, and out because they are not, and
+    # nobody has to tend it or come back to a cold one.
+    from .world import firepit
+    from .angler import FIRE_REACH
+    pit = firepit(world)
+    around = [p for p in people
+              if pit and max(abs(p["x"] - pit[0]), abs(p["y"] - pit[1])) <= FIRE_REACH]
+    tending = [p["name"] for p in around if p["doing"] in ("k", "f")]
+    fire = None
+    if pit:
+        fire = {"x": pit[0], "y": pit[1], "lit": bool(around),
+                "round_it": len(around),
+                "cooking": [{"name": p["name"], "seat": p["seat"]}
+                            for p in around if p["doing"] == "k"],
+                "tending": tending}
     return {
         "world": {"seed": world.seed, "w": world.width, "h": world.height,
                   "tiles": ["".join(chr(48 + t) for t in row) for row in world.tiles]},
         "people": people,
         "me": {"kinds": me.log.kinds, "caught": me.log.caught, "pool": pool,
+               "level": level, "into": into, "needs": needs,
+               "wood": me.wood, "cooked": me.log.cooked,
+               "at_fire": me.by_the_fire(world),
                "doing": people[0]["doing"],
                "recent": [{"name": e.name, "cm": e.best,
                            "rarity": F.BY_NAME[e.name].rarity
                            if e.name in F.BY_NAME else "common"} for e in recent]},
+        "fire": fire,
         "caught": caught,
         "log": [{"text": t, "role": r} for t, r in log[-40:]],
         "status": f"{stamp:%H:%M} \u00b7 {F.hour_band(stamp.hour)}",

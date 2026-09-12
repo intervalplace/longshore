@@ -90,8 +90,16 @@ class World:
             return self.tiles[y][x]
         return WATER
 
-    def walkable(self, x: int, y: int) -> bool:
+    def on_foot(self, x: int, y: int) -> bool:
+        """Ground you could stand on, ignoring what is on it."""
         return self.at(x, y) in (SAND, GRASS)
+
+    def walkable(self, x: int, y: int) -> bool:
+        if not self.on_foot(x, y):
+            return False
+        # You cannot stand in a fire. Without this people walked into the
+        # middle of it and the flame was drawn behind them.
+        return (x, y) != firepit(self)
 
     def inside(self, x: int, y: int) -> bool:
         return 0 <= x < self.width and 0 <= y < self.height
@@ -121,7 +129,15 @@ def _fbm(seed: int, x: float, y: float, scale: float, octaves: int = 4) -> float
     return total / weight
 
 
-def build(seed: str, width: int = 64, height: int = 36) -> World:
+# A coast for four people. Sixty-four by thirty-six was the first guess and it
+# was too much room: at a size where the tiles are big enough to see somebody
+# on, four figures disappeared into two and a half thousand tiles of scenery.
+# Forty by twenty-four keeps every water and every fish, gives about twenty
+# places to sit, and fits a screen at eighteen pixels a tile.
+COAST_WIDTH, COAST_HEIGHT = 40, 24
+
+
+def build(seed: str, width: int = COAST_WIDTH, height: int = COAST_HEIGHT) -> World:
     """A coast with the sea to the west, made from a height field.
 
     Varying a single edge per row gives a wobbly vertical line. A field gives
@@ -172,7 +188,8 @@ def build(seed: str, width: int = 64, height: int = 36) -> World:
         rows.append(tuple(row))
 
     world = World(seed=seed, width=width, height=height, tiles=tuple(rows))
-    return _ensure_ledges(world, number)
+    world = _ensure_ledges(world, number)
+    return _ensure_reeds(world, number)
 
 
 def _ensure_ledges(world: "World", number: int, want: int = 3) -> "World":
@@ -219,5 +236,108 @@ def _ensure_ledges(world: "World", number: int, want: int = 3) -> "World":
                  tiles=tuple(tuple(r) for r in rows))
 
 
+_PITS: dict = {}
+
+
+def firepit(world: World):
+    """Where the fire is. Derived, like everything else.
+
+    Nobody places it and nobody has to be told: the same seed gives the same
+    spot on every machine, so whether it is lit can be worked out from where
+    people are standing, and no part of the fire ever crosses the radio.
+
+    It wants to be near the water and out of the way of the best fishing, so
+    it goes on land with a view of the sea and a bit of shelter behind it.
+    """
+    if world.seed in _PITS:
+        return _PITS[world.seed]
+    # Decided from tiles alone. Scoring it on `fishable_from` read better and
+    # recursed for ever: walkable asks where the fire is, and the fire asked
+    # what was walkable.
+    wet = (WATER, SHALLOW, REED)
+
+    def would_fish(x, y):
+        return world.on_foot(x, y) and any(
+            world.inside(x + dx, y + dy) and world.at(x + dx, y + dy) in wet
+            for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)))
+
+    best, choice = None, None
+    for y in range(1, world.height - 1):
+        for x in range(1, world.width - 1):
+            if not world.on_foot(x, y):
+                continue
+            # What matters is how much fishing is within a short walk. Scoring
+            # it on shelter put the fire in a sandy corner with no water near
+            # it on two coasts in four, and a fire nobody passes is not a
+            # gathering place, it is scenery.
+            near = sum(1 for dx in range(-4, 5) for dy in range(-4, 5)
+                       if would_fish(x + dx, y + dy))
+            room = sum(1 for dx in (-1, 0, 1) for dy in (-1, 0, 1)
+                       if world.on_foot(x + dx, y + dy))
+            if room < 7 or near < 3:
+                continue          # nowhere to stand, or nobody ever comes by
+            sea = sum(1 for dx in (-2, -1, 0, 1, 2) for dy in (-2, -1, 0, 1, 2)
+                      if world.inside(x + dx, y + dy)
+                      and world.at(x + dx, y + dy) in wet)
+            score = (near, room, sea, -x, -y)
+            if best is None or score > best:
+                best, choice = score, (x, y)
+    # Scanning the map for it on every step would be silly; a world is frozen
+    # and its fire never moves.
+    _PITS[world.seed] = choice
+    return choice
+
+
 def render(world: World) -> str:
     return "\n".join("".join(GLYPH[t] for t in row) for row in world.tiles)
+
+
+def _ensure_reeds(world: "World", number: int, want: int = 3) -> "World":
+    """Every coast gets a reed bed somebody can fish from.
+
+    Ledges were guaranteed and reeds were not, which cost nothing on a large
+    coast and everything on a small one: shrink the map and the reeds stop
+    appearing, and with them the ten species that live in them. A coast that
+    can only offer thirty-two of forty-two fish is a coast missing a quarter
+    of the game.
+    """
+    reachable = sum(1 for y in range(world.height) for x in range(world.width)
+                    if world.fishable_from(x, y)
+                    and any(world.at(x + dx, y + dy) == REED
+                            for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0))))
+    if reachable >= want:
+        return world
+
+    # Shallow water next to somewhere a person could stand. Reeds grow in the
+    # thin water at the edge, which is where they grow anyway.
+    candidates = []
+    for y in range(1, world.height - 1):
+        for x in range(1, world.width - 1):
+            if not world.fishable_from(x, y):
+                continue
+            for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)):
+                if world.at(x + dx, y + dy) == SHALLOW:
+                    candidates.append((x + dx, y + dy))
+    if not candidates:
+        # No shallows at all: turn the odd bit of deep water at the edge.
+        for y in range(1, world.height - 1):
+            for x in range(1, world.width - 1):
+                if world.fishable_from(x, y):
+                    for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)):
+                        if world.at(x + dx, y + dy) == WATER:
+                            candidates.append((x + dx, y + dy))
+    if not candidates:
+        return world
+
+    rng = Rng(seed_of(number, "reeds"))
+    rows = [list(row) for row in world.tiles]
+    placed, tries = 0, 0
+    while placed < want - reachable and tries < 300 and candidates:
+        tries += 1
+        spot = candidates[rng.below(len(candidates))]
+        if rows[spot[1]][spot[0]] == REED:
+            continue
+        rows[spot[1]][spot[0]] = REED
+        placed += 1
+    return World(seed=world.seed, width=world.width, height=world.height,
+                 tiles=tuple(tuple(r) for r in rows))
