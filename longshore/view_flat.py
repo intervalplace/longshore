@@ -58,11 +58,18 @@ function shape(w, h){
   fit();
 }
 function fit(){
-  // Whole multiples only. A tile drawn at one and a half pixels is the one
+  // Whole multiples, because a tile drawn at one and a half pixels is the one
   // thing this look cannot survive.
-  const s = Math.max(1, Math.min(3, Math.floor(Math.min(
-    (innerWidth - 20) / GW, (innerHeight - 56) / GH))));
+  //
+  // Except on a screen smaller than the coast. A handheld is 640 across and
+  // this wants 720, and a view that runs off the edge is worse than one drawn
+  // at an awkward size, so below one the canvas is left alone and the browser
+  // is allowed to scale it down.
+  const room = Math.min((innerWidth - 12) / GW, (innerHeight - 48) / GH);
+  const s = room >= 1 ? Math.min(3, Math.floor(room)) : 1;
   screenCv.width = GW*s; screenCv.height = GH*s;
+  screenCv.style.width = room >= 1 ? '' : Math.floor(GW*room) + 'px';
+  screenCv.style.height = room >= 1 ? '' : Math.floor(GH*room) + 'px';
   sg.imageSmoothingEnabled = false;
 }
 addEventListener('resize', fit);
