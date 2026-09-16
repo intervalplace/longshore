@@ -200,5 +200,11 @@ class ShorePanel(Panel):
                               [(t, r) for t, r in self.log], self.host.nick,
                               self.seat_of, self.caught, datetime.now(), self.said)
 
-    def page(self) -> str:
+    def page(self, path: str = "") -> str:
+        """The host calls this with the route that was asked for.
+
+        Taking no argument raised a TypeError, which `app.py` catches and
+        turns into the chat page, so /longshore quietly served the chat
+        instead of the shore with nothing anywhere to say why.
+        """
         return PAGE
