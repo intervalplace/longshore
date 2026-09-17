@@ -515,7 +515,11 @@ document.getElementById('say').onsubmit = e => {
 };
 
 new EventSource('/events').onmessage = m => {
-  const next = JSON.parse(m.data);
+  /* Standalone this is the whole snapshot; hosted by loraline every panel's
+     is nested under its tag, and reading the outer object leaves the coast
+     empty and nothing working. */
+  const all = JSON.parse(m.data);
+  const next = all.longshore || all;
   const was = state.me || {}, now2 = next.me || {};
   if(now2.doing !== was.doing){
     if(now2.doing === 'c') note('plop');
