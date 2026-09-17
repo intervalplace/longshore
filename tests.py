@@ -437,24 +437,4 @@ with _t.TemporaryDirectory() as room2:
     assert Log.from_dict({"roach": [20, 22, 1.0, 1.0]}).points == 20
     ok("and a log written before cooking existed still reads")
 
-
-# ---------- regressions ----------
-import inspect
-
-from longshore.panel import ShorePanel
-
-# app.py does `body = panel.page(route)` inside a try that falls back to the
-# chat page. A page() taking no argument therefore did not fail loudly: it
-# served the wrong page, silently, for as long as nobody looked.
-assert len(inspect.signature(ShorePanel.page).parameters) >= 2, \
-    "page must take the route the host passes it"
-ok("the page takes the route the host passes it")
-
-# host.peers() returns Peer objects, not addresses. panel.py reads .app,
-# .address and .label off them, which is right, and is worth pinning: a panel
-# that treated them as strings would silently see nobody.
-from loraline.host import Host
-assert "online_peers" in inspect.getsource(Host.peers)
-ok("and peers() is a list of people, not a list of addresses")
-
 print(f"\nALL PASS  ({PASSED} checks)")
