@@ -437,4 +437,39 @@ with _t.TemporaryDirectory() as room2:
     assert Log.from_dict({"roach": [20, 22, 1.0, 1.0]}).points == 20
     ok("and a log written before cooking existed still reads")
 
+
+# ---------- the tide ----------
+from longshore import tide as _tide
+
+# Worked out from the clock, so every machine has the same water at the same
+# moment and nothing is ever sent about it.
+assert _tide.PERIOD == 12 * 3600 + 25 * 60, "a lunar day, not a neat twelve hours"
+_heights = [_tide.height(h * 3600) for h in range(26)]
+assert max(_heights) > 0.95 and min(_heights) < -0.95, "it reaches both ends"
+assert {_tide.state(h * 3600) for h in range(26)} == \
+    {"low", "high", "coming in", "going out"}
+ok("a tide of twelve hours and twenty-five minutes, in four words")
+
+# It changes what is interesting and never what is possible: a tide that shut
+# the fishing until eight would be a schedule, and a schedule is an obligation.
+_coast = build("bay-10")
+_low, _high = 10 * 3600, 3 * 3600
+_shut = [(x, y) for y in range(_coast.height) for x in range(_coast.width)
+         if _coast.walkable(x, y, _high) and not _coast.walkable(x, y, _low)]
+assert not _shut, f"low water took away {len(_shut)} places to stand"
+_opened = sum(1 for y in range(_coast.height) for x in range(_coast.width)
+              if _coast.fishable_from(x, y, _low)
+              and not _coast.fishable_from(x, y, _high))
+assert _opened > 0, "and low water should open some"
+ok(f"low water opens {_opened} more places to fish from and closes none")
+
+# and the sea coming in around somebody puts them back on dry land
+_flat = [(x, y) for y in range(_coast.height) for x in range(_coast.width)
+         if _coast.at(x, y) == SHALLOW][0]
+_wader = Angler(x=_flat[0], y=_flat[1])
+assert _coast.walkable(_wader.x, _wader.y, _low)
+assert _wader.wade_back(_coast, _high), "the water came in and nothing happened"
+assert _coast.on_foot(_wader.x, _wader.y), "and left them standing in the sea"
+ok("and somebody caught out on the flats wades back rather than standing in the sea")
+
 print(f"\nALL PASS  ({PASSED} checks)")

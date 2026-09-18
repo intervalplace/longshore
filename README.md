@@ -66,6 +66,25 @@ written beside your identity every half minute. Without that the angler was
 rebuilt from nothing at every start and a level meant to take a year reset
 whenever the window closed, which made the whole of it a lie.
 
+## The tide
+
+Twelve hours and twenty-five minutes, worked out from the clock. Every machine
+has the same water at the same moment and no frame is ever spent saying so,
+which is the third thing here that costs nothing because nobody has to be
+told: the firepit comes from the seed, the fire from who is standing near it.
+
+At low water the flats are out and you can walk on them, which opens about
+twenty more places to fish from. It never closes one. A tide that shut the
+fishing until eight would be a schedule, and a schedule is an obligation:
+there are no stakes here and nothing decays, and something you have to turn up
+for is both.
+
+The sea coming in around you walks you back up the beach. Being stood in the
+water is not a punishment and losing a cast to the tide would be.
+
+Low, coming in, high, going out. Four words, because nobody on a shore says
+the tide is at zero point four.
+
 ## The fire
 
 Every coast has one, where the fishing is. Derived from the seed like
