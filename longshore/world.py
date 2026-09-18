@@ -14,6 +14,8 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 
+from . import tide
+
 WATER, SHALLOW, SAND, GRASS, ROCK, REED, TREE = range(7)
 GLYPH = {WATER: "~", SHALLOW: "-", SAND: ".", GRASS: ",",
          ROCK: "o", REED: "|", TREE: "T"}
@@ -90,12 +92,21 @@ class World:
             return self.tiles[y][x]
         return WATER
 
-    def on_foot(self, x: int, y: int) -> bool:
-        """Ground you could stand on, ignoring what is on it."""
-        return self.at(x, y) in (SAND, GRASS)
+    def on_foot(self, x: int, y: int, now: float | None = None) -> bool:
+        """Ground you could stand on, ignoring what is on it.
 
-    def walkable(self, x: int, y: int) -> bool:
-        if not self.on_foot(x, y):
+        At low water the shallows are ground too. The tide only ever adds
+        places to stand: what you could reach at high water you can still
+        reach at low, so nothing is ever shut and nobody has to turn up at an
+        hour somebody else chose.
+        """
+        tile = self.at(x, y)
+        if tile in (SAND, GRASS):
+            return True
+        return tile == SHALLOW and now is not None and tide.out(now)
+
+    def walkable(self, x: int, y: int, now: float | None = None) -> bool:
+        if not self.on_foot(x, y, now):
             return False
         # You cannot stand in a fire. Without this people walked into the
         # middle of it and the flame was drawn behind them.
@@ -104,17 +115,20 @@ class World:
     def inside(self, x: int, y: int) -> bool:
         return 0 <= x < self.width and 0 <= y < self.height
 
-    def fishable_from(self, x: int, y: int) -> bool:
+    def fishable_from(self, x: int, y: int, now: float | None = None) -> bool:
         """You fish from the land, into water you are standing beside.
 
         The water has to be on the map. Reading off the edge returns water, so
         without the bounds check every tile along the border claimed to be a
         fishing spot with nothing in front of it.
         """
-        if not self.walkable(x, y):
+        if not self.walkable(x, y, now):
             return False
+        # Standing out on the flats at low water, the shallows under your feet
+        # are not water to cast into, but the sea beyond them is.
+        wet = (WATER, REED) if self.at(x, y) == SHALLOW else (WATER, SHALLOW, REED)
         return any(self.inside(x + dx, y + dy)
-                   and self.at(x + dx, y + dy) in (WATER, SHALLOW, REED)
+                   and self.at(x + dx, y + dy) in wet
                    for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)))
 
 

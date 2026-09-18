@@ -518,13 +518,19 @@ document.getElementById('say').onsubmit = e => {
   box.value = ''; box.blur();
 };
 
+const seenCatches = new Set();
 buildSprites();
 new EventSource('/events').onmessage = m => {
   const all = JSON.parse(m.data);
   const next = all.longshore || all;
-  (next.caught||[]).forEach(c => floats.push({
-    text: c.name + ' ' + c.cm, x: c.x, y: c.y, at: frame,
-    gold: c.rarity === 'rare'}));
+  // A catch lingers three seconds so everybody sees it, and a snapshot
+  // arrives about every second: without this the name is drawn three times.
+  (next.caught||[]).forEach(c => {
+    if(c.id !== undefined && seenCatches.has(c.id)) return;
+    if(c.id !== undefined) seenCatches.add(c.id);
+    floats.push({text: c.name + ' ' + c.cm, x: c.x, y: c.y, at: frame,
+                 gold: c.rarity === 'rare'});
+  });
   state = next;
 };
 draw();

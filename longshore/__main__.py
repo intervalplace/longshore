@@ -26,6 +26,7 @@ from .angler import (Angler, COOK_SECONDS, Log, level_from, read_presence,
                      BITING, COOKING, DONE, FEEDING, IDLE, WAITING)
 from .moving import first_stand, float_for, nearest_spot, path_between, plan
 from .web import WebView
+from . import tide
 from .world import build
 
 STEP_SECONDS = 0.28          # how long a pace takes
@@ -241,6 +242,10 @@ def snapshot(world, me, session, log, nick, seat_of, caught, stamp, said) -> dic
                            "rarity": F.BY_NAME[e.name].rarity
                            if e.name in F.BY_NAME else "common"} for e in recent]},
         "fire": fire,
+        # Worked out from the clock, so it is the same water on every machine
+        # and no frame is ever spent saying so.
+        "tide": {"state": tide.state(now), "height": round(tide.height(now), 3),
+                 "out": tide.out(now)},
         "caught": caught,
         "log": [{"text": t, "role": r} for t, r in log[-40:]],
         "status": f"{stamp:%H:%M} \u00b7 {F.hour_band(stamp.hour)}",

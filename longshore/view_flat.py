@@ -65,11 +65,29 @@ function fit(){
   // this wants 720, and a view that runs off the edge is worse than one drawn
   // at an awkward size, so below one the canvas is left alone and the browser
   // is allowed to scale it down.
-  const room = Math.min((innerWidth - 12) / GW, (innerHeight - 48) / GH);
+  // Measure what is actually there rather than guess at it.
+  //
+  // This reserved forty-eight pixels for everything around the canvas, which
+  // is about right on its own and nowhere near it inside loraline, where
+  // there is a switcher, a channel warning and a log as well. It then chose a
+  // scale too big for the space and the coast ran off the top and bottom,
+  // with no way to scroll to the rest of it.
+  const box = screenCv.parentElement;
+  const said = document.getElementById('say');
+  const above = box.getBoundingClientRect().top;
+  const below = said ? said.getBoundingClientRect().height + 12 : 0;
+  const haveW = Math.max(160, box.clientWidth || (innerWidth - 12));
+  const haveH = Math.max(120, innerHeight - above - below - 8);
+
+  const room = Math.min(haveW / GW, haveH / GH);
   const s = room >= 1 ? Math.min(3, Math.floor(room)) : 1;
   screenCv.width = GW*s; screenCv.height = GH*s;
-  screenCv.style.width = room >= 1 ? '' : Math.floor(GW*room) + 'px';
-  screenCv.style.height = room >= 1 ? '' : Math.floor(GH*room) + 'px';
+  // Below one whole pixel a tile, and whenever the whole coast still will not
+  // fit, let the browser scale the picture down. Seeing all of it matters
+  // more than seeing it crisply: the point of this coast is who else is on it.
+  const shown = Math.min(room, s);
+  screenCv.style.width = Math.floor(GW*shown) + 'px';
+  screenCv.style.height = Math.floor(GH*shown) + 'px';
   sg.imageSmoothingEnabled = false;
 }
 addEventListener('resize', fit);
@@ -104,6 +122,10 @@ for(const [k,[a,b,c]] of Object.entries({
   5:['#2c6068','#245058','#387078'],
   6:['#3a5028','#2c4020','#48602f'],
 })) GROUND[k] = {flat:q(a), dark:q(b), lit:q(c)};
+
+/* The shallows uncovered: wet sand, darker and greener than the dry beach
+   above it, so low water is something you can see rather than a word. */
+const FLATS = {flat:q('#9c8f68'), dark:q('#8c8058'), lit:q('#b0a078')};
 
 const P = {};
 for(const [k,v] of Object.entries({
@@ -160,15 +182,17 @@ const seatColour = i => [q('#e8b048'),q('#68a8d8'),q('#d878a0'),q('#78c888'),
 // The coast never changes, so it is painted into its own canvas the first time
 // and then blitted whole. Redrawing two and a half thousand tiles sixty times
 // a second to animate one float is how a battery dies.
+const seenCatches = new Set();
 let coast = null, coastSeed = '';
-function paintCoast(w){
-  if(coast && coastSeed === w.seed) return coast;
+function paintCoast(w, low){
+  if(coast && coastSeed === w.seed + (low ? ':low' : ':high')) return coast;
   coast = document.createElement('canvas');
   coast.width = w.w*TILE; coast.height = w.h*TILE;
   const t = coast.getContext('2d'); t.imageSmoothingEnabled = false;
   const at = (x,y) => (x<0||y<0||x>=w.w||y>=w.h) ? WATER : w.tiles[y].charCodeAt(x)-48;
   for(let y = 0; y < w.h; y++) for(let x = 0; x < w.w; x++){
-    const k = at(x,y), G = GROUND[k];
+    const k = at(x,y);
+    const G = (low && k === SHALLOW) ? FLATS : GROUND[k];
     const px = x*TILE, py = y*TILE;
     // The dither is per pixel, not per tile, so a field of one colour stops
     // being a field of one colour without anything looking noisy.
@@ -179,7 +203,9 @@ function paintCoast(w){
     }
     // A lit edge wherever land meets water, which is the whole lighting model
     // and still the fastest way to say where the shore is.
-    const wet = c => c === WATER || c === SHALLOW || c === REED;
+    // At low water the flats are ground, so the lit edge belongs at their
+    // seaward side rather than where the beach used to end.
+    const wet = c => c === WATER || c === REED || (c === SHALLOW && !low);
     if(!wet(k) && wet(at(x, y-1))){
       t.fillStyle = G.lit; t.fillRect(px, py, TILE, 1);
     }
@@ -197,7 +223,7 @@ function paintCoast(w){
     else if(k === ROCK) t.drawImage(sprites.rock[(x*7+y*11)%2], px, py+1);
     else if(k === REED) t.drawImage(sprites.reed[(x*3+y*7)%3], px, py-1);
   }
-  coastSeed = w.seed;
+  coastSeed = w.seed + (low ? ':low' : ':high');
   return coast;
 }
 
@@ -312,7 +338,7 @@ function draw(){
   if(fb.width !== w.w*TILE) shape(w.w, w.h);
 
   g.fillStyle = P.ink; g.fillRect(0, 0, GW, GH);
-  g.drawImage(paintCoast(w), 0, 0);
+  g.drawImage(paintCoast(w, (state.tide||{}).out), 0, 0);
 
   if(state.fire) drawFire(state.fire);
 
@@ -506,7 +532,11 @@ function drawChrome(){
   g.fillStyle = P.ink2; g.fillRect(0, top, GW, 1);
   g.font = '8px ui-monospace,monospace'; g.textAlign = 'left';
 
-  g.fillStyle = P.dusk; g.fillText(state.status || '', 6, top+12);
+  /* The tide beside the hour, because on a shore they are the same fact. */
+  const tideNow = (state.tide||{}).state;
+  g.fillStyle = P.dusk;
+  g.fillText((state.status || '') + (tideNow ? '  \u00b7  tide ' + tideNow : ''),
+             6, top+12);
   if(me.pool){ g.fillStyle = P.parch;
     g.fillText('the ' + me.pool, 6, top+23); }
   if(me.wood){ g.fillStyle = P.parch;
@@ -582,6 +612,11 @@ new EventSource('/events').onmessage = m => {
   else if((now2.caught||0) > (was.caught||0)) note('landed');
   const mine = (next.people||[]).find(p => p.me) || {};
   (next.caught||[]).forEach(c => {
+    // A catch lingers for three seconds so everybody sees it, and a snapshot
+    // arrives about every second, so without this the name was drawn three
+    // times over one fish.
+    if(c.id !== undefined && seenCatches.has(c.id)) return;
+    if(c.id !== undefined) seenCatches.add(c.id);
     if(!(c.x === mine.x && c.y === mine.y)) note('theirs');
     floats.push({text: c.name + ' ' + c.cm, x: c.x, y: c.y, at: frame,
                  gold: c.rarity === 'rare'});

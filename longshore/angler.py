@@ -192,15 +192,39 @@ class Angler:
 
     # -- what you can do ---------------------------------------------------
 
-    def move(self, world, dx: int, dy: int) -> bool:
+    def move(self, world, dx: int, dy: int, now: float | None = None) -> bool:
         """Walking cancels a cast. You cannot drag a line up the beach."""
         nx, ny = self.x + dx, self.y + dy
-        if not world.walkable(nx, ny):
+        if not world.walkable(nx, ny, now):
             return False
         self.x, self.y = nx, ny
         if self.state in (WAITING, BITING):
             self.state, self.pending = IDLE, (None, 0)
         return True
+
+    def wade_back(self, world, now: float) -> bool:
+        """If the water came in around you, walk up onto the land.
+
+        Being stood in the sea is not a punishment and losing a cast to the
+        tide would be, so this only happens when the flat you are on has gone
+        under, and it puts you on the nearest dry tile rather than anywhere
+        dramatic.
+        """
+        if world.walkable(self.x, self.y, now):
+            return False
+        for radius in range(1, 6):
+            for dy in range(-radius, radius + 1):
+                for dx in range(-radius, radius + 1):
+                    if max(abs(dx), abs(dy)) != radius:
+                        continue
+                    x, y = self.x + dx, self.y + dy
+                    if world.inside(x, y) and world.walkable(x, y, now) \
+                       and world.on_foot(x, y):
+                        self.x, self.y = x, y
+                        if self.state in (WAITING, BITING):
+                            self.state, self.pending = IDLE, (None, 0)
+                        return True
+        return False
 
     def cast(self, world, now: float, month: int, hour: int) -> bool:
         """Put a line in. Decides there and then what is on the end of it.

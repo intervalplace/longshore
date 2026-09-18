@@ -44,6 +44,11 @@ class ShorePanel(Panel):
         self.walk_at = 0.0
         self.intent = None
         self.caught: list = []
+        # A catch stays in the list for three seconds so everybody nearby sees
+        # it, and a snapshot goes out about once a second, so the page was
+        # handed the same catch three times and drew the name three times. An
+        # id it can remember settles it.
+        self.catch_no = 0
         self.said: dict = {}
         self.heard_catch: dict = {}
         self.seats: dict = {}
@@ -86,9 +91,13 @@ class ShorePanel(Panel):
         if self.me is None:
             return
         stamp = datetime.now()
+        # The sea comes in around anybody stood out on the flats.
+        if self.me.wade_back(self.world, now):
+            self.walking = []
+            self.note("The tide came in and you waded back.")
         if self.walking and now - self.walk_at >= STEP_SECONDS:
             step = self.walking.pop(0)
-            self.me.move(self.world, step[0] - self.me.x, step[1] - self.me.y)
+            self.me.move(self.world, step[0] - self.me.x, step[1] - self.me.y, now)
             self.walk_at = now
             if not self.walking and self.intent is not None:
                 if self.me.cast(self.world, now, stamp.month, stamp.hour):
@@ -117,7 +126,9 @@ class ShorePanel(Panel):
             kind = F.BY_NAME.get(shown["fish"])
             self.note(f'{peer.label} landed a {shown["fish"]}, {shown["cm"]} cm.',
                       "gold" if kind and kind.rarity == "rare" else "muted")
-            self.caught.append({"name": shown["fish"], "cm": shown["cm"],
+            self.catch_no += 1
+            self.caught.append({"id": self.catch_no,
+                                "name": shown["fish"], "cm": shown["cm"],
                                 "rarity": kind.rarity if kind else "common",
                                 "x": shown["x"], "y": shown["y"], "at": now})
 
@@ -159,7 +170,9 @@ class ShorePanel(Panel):
                 self.note(f"{species.name}, {cm} cm." +
                           (" A kind you have never caught." if fresh else ""),
                           "gold" if fresh or species.rarity == "rare" else "muted")
-                self.caught.append({"name": species.name, "cm": cm,
+                self.catch_no += 1
+                self.caught.append({"id": self.catch_no,
+                                    "name": species.name, "cm": cm,
                                     "rarity": species.rarity,
                                     "x": self.me.x, "y": self.me.y, "at": now})
         elif what == "cast":
