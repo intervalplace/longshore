@@ -18,10 +18,13 @@ PAGE = r"""<!DOCTYPE html>
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
 <title>longshore</title>
 <style>
-html,body{margin:0;padding:0;height:100%;background:#000;overflow:hidden;
+html,body{margin:0;padding:0;background:#000;
   font-family:ui-monospace,Menlo,Consolas,monospace;-webkit-user-select:none;
   user-select:none;touch-action:manipulation}
-#shell{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+/* Laid out in the flow rather than pinned to the viewport. Fixed at inset:0
+   put the coast underneath loraline's switcher and the channel warning, with
+   no way to scroll to what they covered. */
+#shell{min-height:100vh;display:flex;align-items:center;justify-content:center;
   background:radial-gradient(120% 100% at 50% 0%,#0d120f 0%,#000 80%)}
 #panel{position:relative;image-rendering:pixelated;
   box-shadow:0 0 0 2px #060806,0 0 0 5px #141a14}
@@ -72,12 +75,18 @@ function fit(){
   // there is a switcher, a channel warning and a log as well. It then chose a
   // scale too big for the space and the coast ran off the top and bottom,
   // with no way to scroll to the rest of it.
-  const box = screenCv.parentElement;
+  // Measure the shell, not the panel.
+  //
+  // The panel has no width of its own and shrinks to whatever the canvas is,
+  // so measuring it made the canvas smaller, which made the panel smaller,
+  // which made the canvas smaller: a feedback loop that collapsed the coast
+  // to a postage stamp in the middle of a black screen.
+  const shell = document.getElementById('shell');
   const said = document.getElementById('say');
-  const above = box.getBoundingClientRect().top;
+  const above = shell.getBoundingClientRect().top;
   const below = said ? said.getBoundingClientRect().height + 12 : 0;
-  const haveW = Math.max(160, box.clientWidth || (innerWidth - 12));
-  const haveH = Math.max(120, innerHeight - above - below - 8);
+  const haveW = Math.max(160, (shell.clientWidth || innerWidth) - 12);
+  const haveH = Math.max(120, innerHeight - Math.max(0, above) - below - 8);
 
   const room = Math.min(haveW / GW, haveH / GH);
   const s = room >= 1 ? Math.min(3, Math.floor(room)) : 1;
