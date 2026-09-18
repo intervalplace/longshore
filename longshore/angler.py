@@ -348,7 +348,7 @@ def load_log(path) -> Log:
     if not where.exists():
         return Log()
     try:
-        return Log.from_dict(json.loads(where.read_text()))
+        return Log.from_dict(json.loads(where.read_text(encoding="utf-8")))
     except Exception:
         return Log()
 
@@ -363,7 +363,8 @@ def save_log(log: Log, path) -> None:
     try:
         where.parent.mkdir(parents=True, exist_ok=True)
         temporary = where.with_suffix(".tmp")
-        temporary.write_text(json.dumps(log.to_dict(), separators=(",", ":")))
+        temporary.write_text(json.dumps(log.to_dict(), separators=(",", ":")),
+                             encoding="utf-8")
         os.replace(temporary, where)
     except OSError:
         pass
