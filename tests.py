@@ -429,7 +429,7 @@ with _t.TemporaryDirectory() as room2:
     ok(f"a fishing log survives being closed: level {back.level} came back")
 
     assert load_log(_os.path.join(room2, "nothing.json")).points == 0
-    open(where, "w").write("not json at all")
+    open(where, "w", encoding="utf-8").write("not json at all")
     assert load_log(where).points == 0
     ok("a missing or broken log starts fresh rather than failing")
 
