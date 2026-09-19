@@ -497,4 +497,24 @@ assert _wader.wade_back(_coast, _high), "the water came in and nothing happened"
 assert _coast.on_foot(_wader.x, _wader.y), "and left them standing in the sea"
 ok("and somebody caught out on the flats wades back rather than standing in the sea")
 
+
+# ---------- reaching a level says so ----------
+import inspect as _ins3
+from longshore import panel as _panelmod
+
+_src = _ins3.getsource(_panelmod.ShorePanel.handle)
+# It was a number in the corner changing, which nobody notices while they are
+# watching a float.
+assert "was_level" in _src and "now_level > was_level" in _src
+assert 'self.note(f"Fishing' in _src
+ok("reaching a level is noticed, not just counted")
+
+_view = open("longshore/view_flat.py", encoding="utf-8").read()
+assert "level:" in _view, "and has a sound of its own"
+assert "drawLevelling" in _view and "next.levelled" in _view
+# Handed over once and cleared, so the next snapshot is quiet again.
+assert "reached, self.levelled = self.levelled, 0" in \
+    _ins3.getsource(_panelmod.ShorePanel.snapshot)
+ok("and is announced once, in the middle, with three rising notes")
+
 print(f"\nALL PASS  ({PASSED} checks)")
