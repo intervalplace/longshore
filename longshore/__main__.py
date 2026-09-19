@@ -181,7 +181,8 @@ DOING = {IDLE: "-", WAITING: "c", BITING: "!", DONE: "+",
          COOKING: "k", FEEDING: "f"}
 
 
-def snapshot(world, me, session, log, nick, seat_of, caught, stamp, said) -> dict:
+def snapshot(world, me, session, log, nick, seat_of, caught, stamp, said,
+             levelled: int = 0) -> dict:
     import time as _time
     now = _time.time()
     pool = F.pool_at(world, me.x, me.y) if world.fishable_from(me.x, me.y) else None
@@ -242,6 +243,9 @@ def snapshot(world, me, session, log, nick, seat_of, caught, stamp, said) -> dic
                            "rarity": F.BY_NAME[e.name].rarity
                            if e.name in F.BY_NAME else "common"} for e in recent]},
         "fire": fire,
+        # Set for one snapshot when a level is reached, so the view says so
+        # once and then stops.
+        "levelled": levelled,
         # Worked out from the clock, so it is the same water on every machine
         # and no frame is ever spent saying so.
         "tide": {"state": tide.state(now), "height": round(tide.height(now), 3),

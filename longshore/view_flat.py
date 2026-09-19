@@ -162,6 +162,10 @@ const SOUNDS = {
   // low, repeated irregularly, is near enough at this volume.
   crackle: [900, 380, 0.05, 'sawtooth', 0.05],
   ready:   [440, 880, 0.34, 'triangle', 0.17],
+  // Levelling was a number in the corner changing, which nobody notices while
+  // watching a float. Three rising notes, the only sound here that is more
+  // than one.
+  level:   [523, 784, 0.42, 'triangle', 0.18],
 };
 let audio = null, muted = false;
 try { muted = localStorage.getItem('longshore-muted') === '1'; } catch(e){}
@@ -192,6 +196,7 @@ const seatColour = i => [q('#e8b048'),q('#68a8d8'),q('#d878a0'),q('#78c888'),
 // and then blitted whole. Redrawing two and a half thousand tiles sixty times
 // a second to animate one float is how a battery dies.
 const seenCatches = new Set();
+let levelAt = 0, levelTo = 0;
 let coast = null, coastSeed = '';
 function paintCoast(w, low){
   if(coast && coastSeed === w.seed + (low ? ':low' : ':high')) return coast;
@@ -386,6 +391,7 @@ function draw(){
   drawBubbles(bubbles);
   drawFloats();
   drawChrome();
+  drawLevelling();
 
   sg.drawImage(fb, 0, 0, GW, GH, 0, 0, screenCv.width, screenCv.height);
   requestAnimationFrame(draw);
@@ -535,6 +541,31 @@ function drawFloats(){
 // ---------------------------------------------------------------------------
 // 7. THE CHROME
 // ---------------------------------------------------------------------------
+/* Reaching a level, said once, in the middle, for two and a half seconds.
+   The number in the corner changing is not something anybody notices while
+   they are watching a float. */
+function drawLevelling(){
+  if(!levelTo) return;
+  const age = (performance.now() - levelAt) / 2500;
+  if(age >= 1){ levelTo = 0; return; }
+  // Up a little and out at the end, rather than sitting there and vanishing.
+  const rise = Math.min(1, age * 5);
+  const fade = age > 0.75 ? 1 - (age - 0.75) * 4 : 1;
+  const y = Math.round(GH * 0.42 - rise * 8);
+  g.save();
+  g.globalAlpha = Math.max(0, fade);
+  g.textAlign = 'center';
+  const label = 'FISHING ' + levelTo;
+  g.font = '10px ui-monospace,monospace';
+  const wide = g.measureText(label).width + 22;
+  g.fillStyle = 'rgba(12,16,12,0.72)';
+  g.fillRect(Math.round(GW/2 - wide/2), y - 13, Math.round(wide), 22);
+  g.fillStyle = P.gold;
+  g.fillText(label, Math.round(GW/2), y + 3);
+  g.restore();
+  g.textAlign = 'left';
+}
+
 function drawChrome(){
   const top = GH - CHROME, me = state.me || {};
   g.fillStyle = P.ink; g.fillRect(0, top, GW, CHROME);
@@ -611,6 +642,11 @@ new EventSource('/events').onmessage = m => {
   const moved = JSON.stringify((next.people||[]).map(p=>[p.x,p.y]))
              !== JSON.stringify((state.people||[]).map(p=>[p.x,p.y]));
   const was = state.me || {}, now2 = next.me || {};
+  if(next.levelled){
+    levelAt = performance.now();
+    levelTo = next.levelled;
+    note('level'); note('level', 0.13); note('level', 0.26);
+  }
   if(now2.doing !== was.doing){
     if(now2.doing === 'c') note('plop');
     if(now2.doing === '!') note('bite');

@@ -49,6 +49,7 @@ class ShorePanel(Panel):
         # handed the same catch three times and drew the name three times. An
         # id it can remember settles it.
         self.catch_no = 0
+        self.levelled = 0          # a level just reached, for the view to say so
         self.said: dict = {}
         self.heard_catch: dict = {}
         self.seats: dict = {}
@@ -163,6 +164,7 @@ class ShorePanel(Panel):
             elif self.walking:
                 self.me.stop()
         elif what == "strike":
+            was_level = level_from(self.me.log.points)[0]
             species, cm = self.me.strike(now)
             if species is not None:
                 self.dirty = True
@@ -170,6 +172,12 @@ class ShorePanel(Panel):
                 self.note(f"{species.name}, {cm} cm." +
                           (" A kind you have never caught." if fresh else ""),
                           "gold" if fresh or species.rarity == "rare" else "muted")
+                # Levelling was a number in the corner changing, which is not
+                # something anybody notices while watching a float.
+                now_level = level_from(self.me.log.points)[0]
+                if now_level > was_level:
+                    self.levelled = now_level
+                    self.note(f"Fishing {now_level}.", "gold")
                 self.catch_no += 1
                 self.caught.append({"id": self.catch_no,
                                     "name": species.name, "cm": cm,
@@ -209,9 +217,13 @@ class ShorePanel(Panel):
         if self.me is None:
             return {"world": None, "people": [], "log": []}
         from .__main__ import snapshot as build_snapshot
+        # Handed over once and cleared, so the view announces it and the next
+        # snapshot is quiet again.
+        reached, self.levelled = self.levelled, 0
         return build_snapshot(self.world, self.me, self.host.client.session,
                               [(t, r) for t, r in self.log], self.host.nick,
-                              self.seat_of, self.caught, datetime.now(), self.said)
+                              self.seat_of, self.caught, datetime.now(),
+                              self.said, reached)
 
     def page(self, path: str = "") -> str:
         """The coast. The path is taken and ignored: loraline passes the route
