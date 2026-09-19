@@ -450,18 +450,43 @@ assert {_tide.state(h * 3600) for h in range(26)} == \
     {"low", "high", "coming in", "going out"}
 ok("a tide of twelve hours and twenty-five minutes, in four words")
 
-# It changes what is interesting and never what is possible: a tide that shut
-# the fishing until eight would be a schedule, and a schedule is an obligation.
+# It changes where the fishing is and never whether there is any: a tide that
+# shut the fishing until eight would be a schedule, and a schedule is an
+# obligation. It moves the spots rather than adding to them, because an
+# exposed flat is mud and not water for anybody.
 _coast = build("bay-10")
 _low, _high = 10 * 3600, 3 * 3600
 _shut = [(x, y) for y in range(_coast.height) for x in range(_coast.width)
          if _coast.walkable(x, y, _high) and not _coast.walkable(x, y, _low)]
 assert not _shut, f"low water took away {len(_shut)} places to stand"
-_opened = sum(1 for y in range(_coast.height) for x in range(_coast.width)
-              if _coast.fishable_from(x, y, _low)
-              and not _coast.fishable_from(x, y, _high))
-assert _opened > 0, "and low water should open some"
-ok(f"low water opens {_opened} more places to fish from and closes none")
+
+def _spots(when):
+    return {(x, y) for y in range(_coast.height) for x in range(_coast.width)
+            if _coast.fishable_from(x, y, when)}
+
+_high_spots, _low_spots = _spots(_high), _spots(_low)
+assert len(_low_spots) >= len(_high_spots), "low water should not leave you worse off"
+assert _low_spots - _high_spots, "and should open somewhere new"
+ok(f"low water moves the fishing: {len(_low_spots - _high_spots)} places open, "
+   f"{len(_high_spots - _low_spots)} close, and there are more of them")
+
+# and no hour of any coast leaves nowhere at all to fish from
+for _seed in ("bay-10", "longshore", "a-different-coast"):
+    _c = build(_seed)
+    _fewest = min(sum(1 for y in range(_c.height) for x in range(_c.width)
+                      if _c.fishable_from(x, y, _h * 900)) for _h in range(56))
+    assert _fewest > 0, f"{_seed} has an hour with nowhere to fish"
+ok("and no hour of any coast leaves nowhere to fish from")
+
+# an exposed flat is not water: standing on the beach beside one, there is
+# nothing to cast into, which is how fishing on dry land got in
+_dry = [(x, y) for y in range(_coast.height) for x in range(_coast.width)
+        if _coast.fishable_from(x, y, _low)
+        and not any(_coast.inside(x + dx, y + dy)
+                    and _coast.at(x + dx, y + dy) in (WATER, REED)
+                    for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)))]
+assert not _dry, f"{len(_dry)} places cast into dry ground at low water"
+ok("and nowhere at low water casts into dry ground")
 
 # and the sea coming in around somebody puts them back on dry land
 _flat = [(x, y) for y in range(_coast.height) for x in range(_coast.width)

@@ -74,7 +74,11 @@ which is the third thing here that costs nothing because nobody has to be
 told: the firepit comes from the seed, the fire from who is standing near it.
 
 At low water the flats are out and you can walk on them, which opens about
-twenty more places to fish from. It never closes one. A tide that shut the
+twenty new places to fish from and closes about as many, because an exposed
+flat is mud and not water for anybody. So the tide moves the fishing rather
+than adding to it, and there is never an hour with nowhere to fish.
+
+Moving it rather than stopping it is the whole point. A tide that shut the
 fishing until eight would be a schedule, and a schedule is an obligation:
 there are no stakes here and nothing decays, and something you have to turn up
 for is both.
