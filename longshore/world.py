@@ -124,9 +124,11 @@ class World:
         """
         if not self.walkable(x, y, now):
             return False
-        # Standing out on the flats at low water, the shallows under your feet
-        # are not water to cast into, but the sea beyond them is.
-        wet = (WATER, REED) if self.at(x, y) == SHALLOW else (WATER, SHALLOW, REED)
+        # At low water the flats are mud, not water, for everybody. This used
+        # to exempt only the tile you were standing on, so anyone on the beach
+        # beside an exposed flat was casting into dry sand.
+        out = now is not None and tide.out(now)
+        wet = (WATER, REED) if out else (WATER, SHALLOW, REED)
         return any(self.inside(x + dx, y + dy)
                    and self.at(x + dx, y + dy) in wet
                    for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)))
